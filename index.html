@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subdo MVP</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100">
+  <div class="max-w-3xl mx-auto p-6">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-black">Free Subdomain Panel</h1>
+        <p class="text-white/60 text-sm mt-1">Limit 1 subdomain per akun (dan optional 1 per IP).</p>
+      </div>
+      <div class="flex gap-2">
+        <a href="/auth.html" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 font-bold hover:bg-white/10 transition">Login</a>
+        <button id="logout" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 font-bold hover:bg-white/10 transition">Logout</button>
+      </div>
+    </div>
+
+    <div class="mt-6 grid gap-4 md:grid-cols-2">
+      <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
+        <h2 class="text-xl font-extrabold">Create DNS (A / CNAME)</h2>
+
+        <label class="block mt-4 text-sm text-white/70">Subdomain</label>
+        <input id="sub" class="w-full mt-2 rounded-2xl bg-black/40 border border-white/10 px-4 py-3 outline-none" placeholder="contoh: webku">
+
+        <label class="block mt-4 text-sm text-white/70">Type</label>
+        <select id="type" class="w-full mt-2 rounded-2xl bg-black/40 border border-white/10 px-4 py-3 outline-none">
+          <option value="CNAME">CNAME</option>
+          <option value="A">A</option>
+        </select>
+
+        <label class="block mt-4 text-sm text-white/70">Content</label>
+        <input id="content" class="w-full mt-2 rounded-2xl bg-black/40 border border-white/10 px-4 py-3 outline-none" placeholder="CNAME: target.vercel.app | A: 1.2.3.4">
+
+        <label class="flex items-center gap-2 mt-4 text-sm text-white/70">
+          <input id="proxied" type="checkbox" class="accent-emerald-400" checked />
+          Proxied (Cloudflare)
+        </label>
+
+        <button id="create" class="mt-5 w-full rounded-2xl bg-emerald-500/20 border border-emerald-400/30 px-5 py-3 font-extrabold hover:bg-emerald-500/30 transition">
+          Create
+        </button>
+
+        <p id="msg" class="mt-4 text-sm text-white/70"></p>
+      </div>
+
+      <div class="rounded-3xl border border-white/10 bg-white/5 p-6">
+        <h2 class="text-xl font-extrabold">My Record</h2>
+        <div id="mine" class="mt-4 text-sm text-white/70">Loading...</div>
+
+        <button id="del" class="mt-5 w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-extrabold hover:bg-white/10 transition">
+          Delete My Record
+        </button>
+
+        <div class="mt-6 rounded-2xl border border-white/10 bg-black/30 p-4 text-xs text-white/60">
+          <p class="font-bold text-white/80">Tips:</p>
+          <ul class="list-disc ml-5 mt-2 space-y-1">
+            <li>Kalau vercel: type <b>CNAME</b> → isi <b>cname.vercel-dns.com</b> atau target vercel kamu.</li>
+            <li>Kalau IP VPS: type <b>A</b> → isi IP public.</li>
+            <li>Kalau “unauthorized”, login dulu di <a class="underline" href="/auth.html">auth</a>.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = (t) => ($("msg").textContent = t);
+
+async function j(url, opt){
+  const r = await fetch(url, opt);
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || d.ok === false) throw new Error(d.error || "Request gagal");
+  return d;
+}
+
+async function loadMine(){
+  try{
+    const d = await j("/api/dns/mine");
+    if(!d.record){
+      $("mine").innerHTML = "<span class='text-white/60'>Belum ada record.</span>";
+      return;
+    }
+    const r = d.record;
+    $("mine").innerHTML = `
+      <div class="rounded-2xl border border-white/10 bg-black/30 p-4">
+        <div><b>Host:</b> ${escapeHtml(r.name)}</div>
+        <div><b>Type:</b> ${escapeHtml(r.type)}</div>
+        <div><b>Content:</b> ${escapeHtml(r.content)}</div>
+        <div><b>Proxied:</b> ${r.proxied ? "true" : "false"}</div>
+      </div>
+    `;
+  }catch(e){
+    $("mine").innerHTML = "<span class='text-red-300'>"+escapeHtml(e.message)+"</span>";
+  }
+}
+
+$("create").onclick = async () => {
+  try{
+    msg("Loading...");
+    const subdomain = $("sub").value;
+    const type = $("type").value;
+    const content = $("content").value;
+    const proxied = $("proxied").checked;
+
+    const d = await j("/api/dns/create", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ subdomain, type, content, proxied })
+    });
+
+    msg("✅ Created: " + d.created.name);
+    loadMine();
+  }catch(e){
+    msg("❌ " + e.message);
+  }
+};
+
+$("del").onclick = async () => {
+  try{
+    msg("Deleting...");
+    await j("/api/dns/delete", { method:"DELETE" });
+    msg("✅ Deleted");
+    loadMine();
+  }catch(e){
+    msg("❌ " + e.message);
+  }
+};
+
+$("logout").onclick = async () => {
+  try{
+    await j("/api/auth/logout", { method:"POST" });
+    msg("Logout ✅");
+    loadMine();
+  }catch(e){
+    msg("❌ " + e.message);
+  }
+};
+
+function escapeHtml(s){
+  return String(s||"").replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+loadMine();
+</script>
+</body>
+</html>
